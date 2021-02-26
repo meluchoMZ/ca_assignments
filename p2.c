@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include <mpi.h>
 
 #define TRUE 1
@@ -21,6 +22,7 @@ int main(int argc, char **argv)
 {
 	float alpha, *A, *B, *C;
 	int m, n, k;
+	struct timeval start, finish;
 
 	if (argc < 5 || argc > 6) {
 		print_usage();
@@ -51,11 +53,14 @@ int main(int argc, char **argv)
 		printf("Matriz C:\n");
 		print_matrix(C, m, k);
 	}
+	gettimeofday(&start, NULL);
 	sequential_matrix_product(A, B, C, alpha, m, n, k);
+	gettimeofday(&finish, NULL);
 	if (debug == TRUE) {
 		printf("Calculated matrix A*B = C:\n");
 		print_matrix(C, m, k);
 	}
+	printf("Problema resolto secuencialmente. t = %ld microsegundos\n", (finish.tv_sec-start.tv_sec)*1000+(finish.tv_usec-start.tv_usec)/1000);
 	return EXIT_SUCCESS;
 }
 
