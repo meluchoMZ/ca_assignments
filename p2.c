@@ -24,7 +24,7 @@ int main(int argc, char **argv)
 	float alpha, *A, *Ap, *B, *C, *Cp, *Cgathered;
 	int debug = FALSE, m, n, k, procs, rank, rows_x_procs, *sendcnts, *displs, *kcnts, *kdispls;
 	struct timeval start, finish;
-	double mpi_time, mpi_endtime, *mpi_time_array;
+	double drows_x_procs, mpi_time, mpi_endtime, *mpi_time_array;
 
 	// Inicio da libraria.
 	MPI_Init(&argc, &argv);
@@ -107,8 +107,15 @@ int main(int argc, char **argv)
 	}
 	// Faise unha distribución por bloques da matriz A para cada elemento de proceso
 	// Pra iso o primeiro que hai que facer é calcular o número de filas das que cada elemento e responsabel.
-	rows_x_procs = (int) round(m/procs);
+	drows_x_procs = (double) m/ (double) procs;
+	if (drows_x_procs - (int)m/procs > 0) {
+		rows_x_procs = (int) ceil((int) m/procs +1);
+	} else {
+		rows_x_procs = m/procs;
+	}
 	if (debug == TRUE && rank == 0) {
+		printf("drows = %f\n", drows_x_procs);
+		printf("Columnas por proceso:\nDe 0 a p-1: %d filas\n p-1: % d filas\n", rows_x_procs, m-(procs-1)*rows_x_procs);
 		printf("Cada elemento de proceso procesa %d filas de %d, excepto o ultimo que procesa %d filas\n", rows_x_procs, m, m-(procs-1)*rows_x_procs);
 	}
 	// Todos os procesos levan m/procs elementos menos o ultimo que leva o que queda (m - (procs-1)*rows_x_procs)	
