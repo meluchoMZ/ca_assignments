@@ -120,18 +120,18 @@ int main(int argc, char *argv[])
 			aux_unpack[0] = _mm_unpacklo_ps(a_reg[0], a_reg[2]);
 			aux_unpack[1] = _mm_unpacklo_ps(a_reg[1], a_reg[3]);
 			// mestúranse os primeiros 8 bytes dos rexistros, de xeito que 
-			// quedan os primeiros 4 bytes de cada a_reg[i] orixinal (a0,c0,b0,d0)
+			// quedan os primeiros 4 bytes de cada a_reg[i] orixinal (a0,b0,c0,d0)
 			aux_unpack[2] = _mm_unpacklo_ps(aux_unpack[0], aux_unpack[1]);
 			// mestúranse so últimos 8 bytes dos rexistros, de xeito que quedan
-			// os segundos 4 bytes de cada a_reg[i] orixinal (a1,c1,b1,d1)
+			// os segundos 4 bytes de cada a_reg[i] orixinal (a1,b1,c1,d1)
 			aux_unpack[3] = _mm_unpackhi_ps(aux_unpack[0], aux_unpack[1]);
 			// mestúranse os 8 bytes máis significativos dos rexistros
 			aux_unpack[0] = _mm_unpackhi_ps(a_reg[0], a_reg[2]);
 			aux_unpack[1] = _mm_unpackhi_ps(a_reg[1], a_reg[3]);
 			// mestúranse os primeiros 8 bytes dos rexistros, quedando os bytes
-			// 7 a 11 de cada a_reg[i] orixinal (a2,c2,b2,d2)
+			// 7 a 11 de cada a_reg[i] orixinal (a2,b2,c2,d2)
 			aux_unpack[4] = _mm_unpacklo_ps(aux_unpack[0], aux_unpack[1]);
-			// mestúranse os últimos 4 bytes de cada a_reg[i] orixinal (a3,c3,b3,d3)
+			// mestúranse os últimos 4 bytes de cada a_reg[i] orixinal (a3,b3,c3,d3)
 			aux_unpack[0] = _mm_unpackhi_ps(aux_unpack[0], aux_unpack[1]);
 			// súmanse verticalmente os vectores
 			aux_unpack[0] = _mm_add_ps(aux_unpack[4], aux_unpack[0]);
