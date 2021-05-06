@@ -30,7 +30,7 @@ int main(int argc, char **argv)
 	int m, n, k, procs, rank, pack_position = 0, pack_buffer_size, pack_buffer_size_delta, recvcount;
 	int *sendcounts, *displs;
 	char *pack_buffer;
-	MPI_Comm split_comm;
+	MPI_Comm rows_communicator, columns_communicator;
 	MPI_Datatype submatrix_A, submatrix_B, submatrix_C, submatrix_A_resized, submatrix_B_resized, submatrix_C_resized;
 
 	// Inicio de MPI
@@ -136,7 +136,18 @@ int main(int argc, char **argv)
 
 	for (int i = 0; i < procs; i++) {
 		sendcounts[i] = 1;
-		displs[i] = i/(int)sqrt(procs) * m/(int)sqrt(procs);
+	}
+
+	for (int i = 0; i < (int)sqrt(procs); i++) {
+		for (int j = 0; j < (int)sqrt(procs); j++) {
+			displs[i*(int)sqrt(procs)+j] = j + i*((n*m/(int)sqrt(procs)) / (n/(int)sqrt(procs)));
+		}
+	}
+
+	if (rank == 0) {
+	for (int i = 0; i < procs; i++) {
+		printf("process %d: offset -> %d\n", i, displs[i]);
+	}
 	}
 
 	if (debug == TRUE && rank == 0) {
@@ -146,6 +157,7 @@ int main(int argc, char **argv)
 	// compártense as submatrices entre os procesos
 	MPI_Scatterv(A, sendcounts, displs, submatrix_A_resized, recvbuffer, recvcount, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
+
 	for (int i = 0; i < procs; i++) {
 		if (rank == i) {
 			printf("\n RANK = %d\n", rank);
@@ -154,10 +166,30 @@ int main(int argc, char **argv)
 		}
 		MPI_Barrier(MPI_COMM_WORLD);
 	}
+	// compartese B
+	for (int i = 0; i < (int)sqrt(procs); i++) {
+		for (int j = 0; j < (int)sqrt(procs); j++) {
+			displs[i*(int)sqrt(procs)+j] = j + i*((k*n/(int)sqrt(procs)) / (k/(int)sqrt(procs)));
+		}
+	}
+	free(recvbuffer);
+	recvbuffer = malloc(n/sqrt(procs) * k/sqrt(procs) * sizeof(float));
+	recvcount = n/(int)sqrt(procs) * k/(int)sqrt(procs);
+	MPI_Scatterv(B, sendcounts, displs, submatrix_B_resized, recvbuffer, recvcount, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	if (rank == 0) printf("\nMatrix B\n");
+	for (int i = 0; i < procs; i++) {
+		if (rank == i) {
+			printf("\n RANK = %d\n", rank);
+			print_matrix(recvbuffer, n/(int)sqrt(procs), k/(int)sqrt(procs));
+			printf("\n");
+		}
+		MPI_Barrier(MPI_COMM_WORLD);
+	}
 
 #ifndef CARTESIAN_TOPOLOGY
 	// creación de comunicadores con MPI_Comm_split
-	MPI_Comm_split(MPI_COMM_WORLD, rank%2, rank/2, &split_comm);
+	MPI_Comm_split(MPI_COMM_WORLD, rank%(int)sqrt(procs), rank/(int)sqrt(procs), &rows_communicator);
+	MPI_Comm_split(MPI_COMM_WORLD, rank/(int)sqrt(procs), rank%(int)sqrt(procs), &rows_communicator);
 #else
 	// creación de comunicadores con topoloxías virtuais
 
