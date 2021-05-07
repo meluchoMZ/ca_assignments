@@ -16,18 +16,19 @@
 // Comunicadores:
 // Se comentado, os comunicadores créanse con MPI_Comm_split
 // Noutro caso, os comunicadores créanse mediante topoloxías virtuais
-#define CARTESIAN_TOPOLOGY
+//#define CARTESIAN_TOPOLOGY
 
 int debug = FALSE;
 void print_usage(void);
 void init_matrix(float *M, int rows, int cols, int zeros);
 void print_matrix(float *M, int rows, int cols);
 void sequential_matrix_product(float *A, float *B, float *C, float alpha, int m, int n, int k);
+void compare_matrix(float *A, float *B, int A_rows, int A_cols, int B_rows, int B_cols);
 
 int main(int argc, char **argv)
 {
-	float alpha, *A, *B, *C, *C_gathered, *recvbuffer;
-	int m, n, k, procs, rank, pack_position = 0, pack_buffer_size, pack_buffer_size_delta, recvcount;
+	float alpha, *A, *B, *C, *C_gathered, *recvbuffer, *local_A, *local_B, *local_C, *bcast_A, *bcast_B;
+	int m, n, k, procs, rank, pack_position = 0, pack_buffer_size, pack_buffer_size_delta, recvcount, rows_rank, columns_rank, rows_procs, columns_procs;
 	int *sendcounts, *displs;
 	char *pack_buffer;
 	MPI_Comm rows_communicator, columns_communicator;
@@ -131,7 +132,7 @@ int main(int argc, char **argv)
 	sendcounts = malloc(procs*sizeof(int));
 	displs = malloc(procs*sizeof(int));
 	
-	recvbuffer = malloc(m/sqrt(procs) * n/sqrt(procs) * sizeof(float));
+	local_A = malloc(m/sqrt(procs) * n/sqrt(procs) * sizeof(float));
 	recvcount = m/(int)sqrt(procs) * n/(int)sqrt(procs);
 
 	for (int i = 0; i < procs; i++) {
@@ -155,13 +156,13 @@ int main(int argc, char **argv)
 		printf("TypeVector: param1 = %d; param2 = %d; param3 = %d\n", m/(int)sqrt(procs), m/(int)sqrt(procs), m);
 	}
 	// compártense as submatrices entre os procesos
-	MPI_Scatterv(A, sendcounts, displs, submatrix_A_resized, recvbuffer, recvcount, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	MPI_Scatterv(A, sendcounts, displs, submatrix_A_resized, local_A, recvcount, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
 
 	for (int i = 0; i < procs; i++) {
 		if (rank == i) {
 			printf("\n RANK = %d\n", rank);
-			print_matrix(recvbuffer, m/(int)sqrt(procs), n/(int)sqrt(procs));
+			print_matrix(local_A, m/(int)sqrt(procs), n/(int)sqrt(procs));
 			printf("\n");
 		}
 		MPI_Barrier(MPI_COMM_WORLD);
@@ -172,15 +173,14 @@ int main(int argc, char **argv)
 			displs[i*(int)sqrt(procs)+j] = j + i*((k*n/(int)sqrt(procs)) / (k/(int)sqrt(procs)));
 		}
 	}
-	free(recvbuffer);
-	recvbuffer = malloc(n/sqrt(procs) * k/sqrt(procs) * sizeof(float));
+	local_B = malloc(n/sqrt(procs) * k/sqrt(procs) * sizeof(float));
 	recvcount = n/(int)sqrt(procs) * k/(int)sqrt(procs);
-	MPI_Scatterv(B, sendcounts, displs, submatrix_B_resized, recvbuffer, recvcount, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	MPI_Scatterv(B, sendcounts, displs, submatrix_B_resized, local_B, recvcount, MPI_FLOAT, 0, MPI_COMM_WORLD);
 	if (rank == 0) printf("\nMatrix B\n");
 	for (int i = 0; i < procs; i++) {
 		if (rank == i) {
 			printf("\n RANK = %d\n", rank);
-			print_matrix(recvbuffer, n/(int)sqrt(procs), k/(int)sqrt(procs));
+			print_matrix(local_B, n/(int)sqrt(procs), k/(int)sqrt(procs));
 			printf("\n");
 		}
 		MPI_Barrier(MPI_COMM_WORLD);
@@ -188,8 +188,9 @@ int main(int argc, char **argv)
 
 #ifndef CARTESIAN_TOPOLOGY
 	// creación de comunicadores con MPI_Comm_split
-	MPI_Comm_split(MPI_COMM_WORLD, rank%(int)sqrt(procs), rank/(int)sqrt(procs), &rows_communicator);
+	MPI_Comm_split(MPI_COMM_WORLD, rank%(int)sqrt(procs), rank/(int)sqrt(procs), &columns_communicator);
 	MPI_Comm_split(MPI_COMM_WORLD, rank/(int)sqrt(procs), rank%(int)sqrt(procs), &rows_communicator);
+
 #else
 	// creación de comunicadores con topoloxías virtuais
 
@@ -197,17 +198,70 @@ int main(int argc, char **argv)
 
 	// Algoritmo SUMMA
 
+	// obtéñense os procesos e rangos por comunicador
+	MPI_Comm_size(rows_communicator, &rows_procs);
+	MPI_Comm_rank(rows_communicator, &rows_rank);
+	MPI_Comm_size(columns_communicator, &columns_procs);
+	MPI_Comm_rank(columns_communicator, &columns_rank);
+	
+	bcast_A = malloc(m/sqrt(procs) * n/sqrt(procs) * sizeof(float));
+	bcast_B = malloc(n/sqrt(procs) * k/sqrt(procs) * sizeof(float));
+	local_C = calloc(m/sqrt(procs) * k/sqrt(procs), sizeof(float));
+	if (rank == 0) {
+		printf("local_C before computation\n");
+		print_matrix(local_C, m/sqrt(procs), k/sqrt(procs));
+	}
+
+	for (int p = 0; p < sqrt(procs); p++) {
+		if (rows_rank == p) {
+			memcpy(bcast_A, local_A, m/sqrt(procs)*n/sqrt(procs)*sizeof(float));
+		}
+		MPI_Bcast(bcast_A, m/sqrt(procs)*n/sqrt(procs), MPI_FLOAT, p, rows_communicator);
+		if (columns_rank == p) {
+			memcpy(bcast_B, local_B, n/sqrt(procs)*k/sqrt(procs)*sizeof(float));
+		}
+		MPI_Bcast(bcast_B, n/sqrt(procs)*k/sqrt(procs), MPI_FLOAT, p, columns_communicator);
+
+		for (int i = 0; i < m/sqrt(procs); i++) {
+			for (int j = 0; j < k/sqrt(procs); j++) {
+				for (int l = 0; l < n/sqrt(procs); l++) {
+					//C[i*k+j] += alpha * A[i*n+l] * B[l*k+j];
+					local_C[i*(k/(int)sqrt(procs))+j] += alpha * bcast_A[i*(n/(int)sqrt(procs))+l] * bcast_B[l*(k/(int)sqrt(procs))+j];
+					//printf("bcast_A[i] = %f; bcast_B[i] = %f\n", bcast_A[i*(n/(int)sqrt(procs))+l], bcast_B[l*(k/(int)sqrt(procs))+j]);
+				}
+			}
+		}
+	}
+	// fin SUMMA
+	if (rank == 0) {
+		printf("local_C after computation\n");
+		print_matrix(local_C, m/sqrt(procs), k/sqrt(procs));
+	}
+
+	for (int i = 0; i < (int)sqrt(procs); i++) {
+		for (int j = 0; j < (int)sqrt(procs); j++) {
+			displs[i*(int)sqrt(procs)+j] = j + i*((k*m/(int)sqrt(procs)) / (k/(int)sqrt(procs)));
+		}
+	}
+	if (rank == 0) {
+		C_gathered = malloc(m*k*sizeof(float));
+	}
+	recvcount = m/(int)sqrt(procs) * k/(int)sqrt(procs);
+	MPI_Gatherv(local_C, recvcount, MPI_FLOAT, C_gathered, sendcounts, displs, submatrix_C_resized, 0, MPI_COMM_WORLD);
+
+
 	if (debug == TRUE && rank == 0) {
 		printf("Calculated matrix A*B = C:\n");
 		print_matrix(C, m, k);
+		printf("\nGathered matrix: \n");
+		print_matrix(C_gathered, m, k);
+		printf("\n");
+		compare_matrix(C, C_gathered, m, k, m, k);
 	}
 
 	// desfeita de comunicadores
-#ifndef CARTESIAN_TOPOLOGY
-	MPI_Comm_free(&split_comm);
-#else
-
-#endif
+	MPI_Comm_free(&rows_communicator);
+	MPI_Comm_free(&columns_communicator);
 
 	// desfanse os tipos derivados
 	MPI_Type_free(&submatrix_A); MPI_Type_free(&submatrix_A_resized);
